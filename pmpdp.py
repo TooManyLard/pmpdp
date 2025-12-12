@@ -54,6 +54,39 @@ def get_music_folders():
         return []
 
 
+def keep_alive_loop():
+    """メインクライアントの接続状態を定期的に確認し、切断されていたら再接続する"""
+    global client
+    # 30秒ごとに接続を確認
+    interval = 5
+
+    while True:
+        try:
+            # client.ping() は、接続が正常ならTrueを返すか何も返さない
+            # 接続が切断されていれば例外(ConnectionError/ProtocolError)が発生する
+            client.ping()
+            # print("Main client ping successful.") # デバッグ用
+
+        except Exception as e:
+            # 接続エラーやソケットエラーが発生した場合
+            print(f"Main client keep-alive failed: {e}. Attempting reconnect...")
+            try:
+                # 既存の接続を確実に切断
+                client.disconnect()
+            except:
+                pass
+
+            try:
+                # 再接続
+                client.connect("localhost", 6600)
+                print("Main client successfully reconnected by keep-alive.")
+            except Exception as re_e:
+                print(f"Main client reconnection failed: {re_e}.")
+                # 再接続に失敗した場合でも、次のループで再度試みる
+
+        # 設定された間隔だけ待機
+        time.sleep(interval)
+
 def get_folder_contents(folder_path):
     """指定フォルダの内容を取得"""
     try:
@@ -402,7 +435,12 @@ if __name__ == "__main__":
     status_thread = threading.Thread(target=status_update_loop)
     status_thread.daemon = True
     status_thread.start()
-    
+   
+    #キープアライブスレッド開始
+    keep_alive_thread = threading.Thread(target=keep_alive_loop)
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
+
     # メインループ
     try:
         while True:
@@ -413,35 +451,3 @@ if __name__ == "__main__":
         client.disconnect()
         sys.exit(0)
 
-def keep_alive_loop():
-    """メインクライアントの接続状態を定期的に確認し、切断されていたら再接続する"""
-    global client
-    # 30秒ごとに接続を確認
-    interval = 5
-
-    while True:
-        try:
-            # client.ping() は、接続が正常ならTrueを返すか何も返さない
-            # 接続が切断されていれば例外(ConnectionError/ProtocolError)が発生する
-            client.ping()
-            # print("Main client ping successful.") # デバッグ用
-
-        except Exception as e:
-            # 接続エラーやソケットエラーが発生した場合
-            print(f"Main client keep-alive failed: {e}. Attempting reconnect...")
-            try:
-                # 既存の接続を確実に切断
-                client.disconnect()
-            except:
-                pass
-
-            try:
-                # 再接続
-                client.connect("localhost", 6600)
-                print("Main client successfully reconnected by keep-alive.")
-            except Exception as re_e:
-                print(f"Main client reconnection failed: {re_e}.")
-                # 再接続に失敗した場合でも、次のループで再度試みる
-
-        # 設定された間隔だけ待機
-        time.sleep(interval)
