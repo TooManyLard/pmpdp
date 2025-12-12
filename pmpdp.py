@@ -17,7 +17,8 @@ button4 = Button(20)  # 下ボタン
 client = MPDClient()
 client.timeout = 10
 client.idletimeout = None
-
+watch_client = MPDClient()
+watch_client.timeout = 10 
 # グローバル変数
 pathes = []
 files = []
@@ -32,6 +33,7 @@ def connect_mpd():
     """MPDサーバーに接続"""
     try:
         client.connect("localhost", 6600)
+        watch_client.connect("localhost", 6600)
         print("Connected to MPD server")
         return True
     except Exception as e:
@@ -328,11 +330,19 @@ def update_display():
     disp.display(img)
 
 def status_update_loop():
-    """再生状態の定期更新"""
     while True:
-        if operation_mode == "playing":
+        try:
+            # MPDサーバーの状態変化を待機 (通常、ここでスレッドがブロックされる)
+            watch_client.idle() 
+            # 状態が変わったら、すべての画面モードで表示を更新
+            # (再生中の曲が進む場合も、通常MPDは'player'イベントを発生させる)
             update_display()
-        time.sleep(1)
+            time.sleep(1)
+        except Exception as e:
+            # 接続が切断された場合の対応
+            print(f"MPD idle error: {e}. Reconnecting...")
+            connect_mpd() # 再接続を試みる
+            time.sleep(1)
 
 # メイン処理
 if __name__ == "__main__":
@@ -396,7 +406,7 @@ if __name__ == "__main__":
     # メインループ
     try:
         while True:
-            time.sleep(0.1)
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nShutting down...")
         client.close()
