@@ -51,6 +51,7 @@ def get_music_folders():
         print(f"Error getting folders: {e}")
         return []
 
+
 def get_folder_contents(folder_path):
     """指定フォルダの内容を取得"""
     try:
@@ -103,6 +104,41 @@ def play_folder(folder_path):
         print(f"Playing folder: {folder_path}")
     except Exception as e:
         print(f"Error playing folder: {e}")
+
+def add_recursive_files(folder_path):
+    """指定フォルダ以下のすべてのファイルをMPDキューに追加（再帰処理）"""
+    try:
+        items = client.lsinfo(folder_path) if folder_path else client.lsinfo()
+        
+        for item in items:
+            if 'file' in item:
+                client.add(item['file'])
+            elif 'directory' in item:
+                # サブディレクトリに対して再帰的に呼び出す
+                add_recursive_files(item['directory'])
+    except Exception as e:
+        print(f"Error adding recursive files from {folder_path}: {e}")
+
+def play_all_in_current_folder(folder_path):
+    """現在のフォルダ以下のすべてのファイルを再生"""
+    global is_playing
+    try:
+        client.clear()
+        
+        # 再帰的にすべてのファイルを追加
+        add_recursive_files(folder_path)
+        
+        # キューに曲が追加されているか確認してから再生
+        if client.status().get('playlistlength', 0) > 0:
+            client.play(0)
+            is_playing = True
+            print(f"Playing all files from: {folder_path}")
+        else:
+            print("No files found to play.")
+            is_playing = False
+            
+    except Exception as e:
+        print(f"Error playing all in folder: {e}")
 
 def stop_playback():
     """再生停止"""
@@ -207,6 +243,10 @@ def handle_button(bt):
                     # ファイルを再生
                     play_file(item_path)
                     operation_mode = "playing"
+                elif item_type == 'special' and item_path == 'PLAY_ALL':
+                    # 「すべて再生」を実行
+                    play_all_in_current_folder(current_folder)
+                    operation_mode = "playing"
     
     update_display()
 
@@ -220,8 +260,16 @@ def load_folder_contents(folder_path):
     """フォルダ内容をロード"""
     global pathes, files
     contents = get_folder_contents(folder_path)
+    # 「すべて再生」オプションの定義
+    # 形式: ('type', 'path/uri', 'display_name')
+    # typeは'special'など、既存の'folder'/'file'と重複しないものにする
+    play_all_option = ('special', 'PLAY_ALL', "[PLAY ALL RECURSIVE]")
+    
+    # 取得したコンテンツのリストに「すべて再生」オプションを追加
+    contents.append(play_all_option)
+
     pathes = contents
-    files = [item[2] for item in contents]  # 表示名のみ
+    files = [item[2] for item in contents] # 表示名のみ
 
 def update_display():
     """ディスプレイを更新"""
