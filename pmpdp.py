@@ -129,7 +129,7 @@ def play_all_in_current_folder(folder_path):
         add_recursive_files(folder_path)
         
         # キューに曲が追加されているか確認してから再生
-        if client.status().get('playlistlength', 0) > 0:
+        if int(client.status().get('playlistlength', 0)) > 0:
             client.play(0)
             is_playing = True
             print(f"Playing all files from: {folder_path}")
