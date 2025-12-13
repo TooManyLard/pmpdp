@@ -29,6 +29,11 @@ display_type = "square"
 current_folder = ""
 is_playing = False
 
+# ★修正：バックライト制御用の変数
+backlight_is_on = True               # バックライトの状態を保持
+backlight_timer = 0                  # カウンター（0で消灯、>0 で点灯維持）
+BACKLIGHT_TIMEOUT_MAX = 5            # タイムアウトの初期値（5秒）
+
 def connect_mpd():
     """MPDサーバーに接続"""
     try:
@@ -204,6 +209,28 @@ def get_playback_status():
         print(f"Error getting status: {e}")
         return "stop", "Error"
 
+def backlight_control_loop():
+    """バックライトの自動オフを制御し、オフ時にスレッドを効率的に待機させる"""
+    global backlight_is_on, backlight_timer
+    
+    while True:
+        if backlight_is_on:
+            # 💡 点灯中の処理：1秒待機し、タイマーを減らす
+            time.sleep(1) 
+            backlight_timer -= 1
+            
+            if backlight_timer <= 0:
+                # タイムアウト！バックライトをオフにする
+                disp.set_backlight(0)
+                backlight_is_on = False
+                backlight_timer = 0
+                print("Backlight OFF due to timeout. Control thread entering sleep state.")
+        else:
+            # 😴 消灯中の処理：バックライトがオフの間は、操作があるまで無限に待機（負荷はほぼゼロ）
+            # handle_button で backlight_timer が > 0 にリセットされるまで、ここでブロックされる
+            # ただし、安全のため、このスレッド自体がフリーズしないよう、わずかな待機を推奨
+            time.sleep(0.5)
+
 def init_buttons():
     """ボタンイベントの初期化"""
     button1.when_pressed = handle_button
@@ -213,7 +240,14 @@ def init_buttons():
 
 def handle_button(bt):
     """ボタン入力の処理"""
-    global selectedindex, files, pathes, operation_mode, previous_operation_mode, current_folder
+    global selectedindex, files, pathes, operation_mode, previous_operation_mode, current_folder, backlight_timer, backlight_is_on
+
+    backlight_timer = BACKLIGHT_TIMEOUT_MAX
+    
+    if not backlight_is_on:
+        disp.set_backlight(1)
+        backlight_is_on = True
+        update_display()    
  
 # for button debug, uncomment some line and running script in terminal. 
 #    print(f"Button pressed: {bt.pin}, current index: {selectedindex}, files count: {len(files)}")
@@ -419,8 +453,8 @@ if __name__ == "__main__":
     HEIGHT = disp.height
     img = Image.new("RGB", (WIDTH, HEIGHT), color=(0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype("/home/sato/pmpdp/misaki/misaki_gothic.ttf", 16)
-    font_small = ImageFont.truetype("/home/sato/pmpdp/misaki/misaki_gothic.ttf", 16)
+    font = ImageFont.truetype("/opt/pmpdp/misaki/misaki_gothic.ttf", 16)
+    font_small = ImageFont.truetype("/opt/pmpdp/misaki/misaki_gothic.ttf", 16)
     
     # 初期メニュー表示
     load_main_menu()
