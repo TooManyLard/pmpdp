@@ -174,7 +174,7 @@ def reboot_system():
 
     time.sleep(0.5)
 
-    subprocess.run(['sudo', 'reboot'])
+    subprocess.run(['sudo', 'systemctl', "restart", "pmpdp.service"])
 
     """MPDに接続"""
 
@@ -562,65 +562,25 @@ def handle_button_action(bt):
 
     
 
-    # ダブルクリック検出
+    # 再生中画面でのシングルクリック→再生/停止
 
-    current_time = time.time()
-
-    if current_time - last_button_time < 2.0:
-
-        button_click_count += 1
-
-    else:
-
-        button_click_count = 1
-
-    last_button_time = current_time
-
-    
-
-    # 再生中画面でのダブルクリック→スキップ
-
-    if current_screen == "now_playing" and button_click_count == 2:
+    if current_screen == "now_playing": 
 
         try:
 
-            mpd_client.next()
+            status = mpd_client.status()
+
+            if status['state'] == 'play':
+
+                mpd_client.pause()
+
+            else:
+
+                mpd_client.play()
 
         except Exception as e:
 
-            print(f"Error skipping: {e}")
-
-        button_click_count = 0
-
-        return
-
-    
-
-    # 再生中画面でのシングルクリック→再生/停止
-
-    if current_screen == "now_playing" and button_click_count == 1:
-
-        time.sleep(0.3)  # ダブルクリック待ち
-
-        if button_click_count == 1:
-
-            try:
-
-                status = mpd_client.status()
-
-                if status['state'] == 'play':
-
-                    mpd_client.pause()
-
-                else:
-
-                    mpd_client.play()
-
-            except Exception as e:
-
-                print(f"Error toggling play: {e}")
-
-        button_click_count = 0
+            print(f"Error toggling play: {e}")
 
         return
 
@@ -980,47 +940,7 @@ def get_album_art(file_path):
 
     except Exception as e:
 
-        # albumartコマンドが失敗した場合、readpictureを試す
-
-        try:
-
-            picture = mpd_client.readpicture(file_path)
-
-            if picture and 'binary' in picture:
-
-                from io import BytesIO
-
-                art_data = picture['binary']
-
-                return Image.open(BytesIO(art_data))
-
-        except Exception as e2:
-
-            print(f"Error loading embedded album art: {e2}")
-
-        
-
-        # 埋め込みアートワークがない場合、cover.jpgを探す
-
-        try:
-
-            dir_path = os.path.dirname(file_path)
-
-            music_dir = mpd_client.config().get('music_directory', '/var/lib/mpd/music')
-
-            cover_path = os.path.join(music_dir, dir_path, "cover.jpg")
-
-            
-
-            if os.path.exists(cover_path):
-
-                return Image.open(cover_path)
-
-        except Exception as e3:
-
-            print(f"Error loading cover.jpg: {e3}")
-
-    
+            print(f"Error loading cover.jpg: {e}")
 
     return None
 
@@ -1096,13 +1016,13 @@ def draw_main_menu():
 
         if i == selected_index:
 
-            draw.rectangle([0, y, disp.width, y + line_height], fill=(255, 255, 255))
+            draw.rectangle([0, y + 1, disp.width, y + line_height], fill=(255, 255, 255))
 
-            draw.text((2, y), item, font=font, fill=(0, 0, 0), spacing=0)
+            draw.text((2, y + 2), item, font=font, fill=(0, 0, 0), spacing=0)
 
         else:
 
-            draw.text((2, y), item, font=font, fill=(255, 255, 255), spacing=0)
+            draw.text((2, y + 2), item, font=font, fill=(255, 255, 255), spacing=0)
 
 
 
@@ -1110,7 +1030,7 @@ def draw_library():
 
     """ライブラリを描画"""
 
-    line_height = 16  # 行間0px
+    line_height = 17  # 行間0px
 
     max_lines = 14
 
@@ -1128,7 +1048,7 @@ def draw_library():
 
         item = library_items[i]
 
-        prefix = "＞" if item['type'] == 'directory' else ""
+        prefix = ">" if item['type'] == 'directory' else ""
 
         name = prefix + item['name']
 
@@ -1136,13 +1056,13 @@ def draw_library():
 
         if i == selected_index:
 
-            draw.rectangle([0, y, disp.width, y + line_height], fill=(255, 255, 255))
+            draw.rectangle([0, y + 1, disp.width, y + line_height], fill=(255, 255, 255))
 
-            draw.text((2, y), name[:40], font=font_small, fill=(0, 0, 0), spacing=0)
+            draw.text((2, y + 2), name[:40], font=font_small, fill=(0, 0, 0), spacing=0)
 
         else:
 
-            draw.text((2, y), name[:40], font=font_small, fill=(255, 255, 255), spacing=0)
+            draw.text((2, y + 2), name[:40], font=font_small, fill=(255, 255, 255), spacing=0)
 
 
 
@@ -1182,7 +1102,7 @@ def draw_now_playing():
 
         time_text = f"{elapsed_str} / {duration_str}"
 
-        draw.text((10, disp.height - 32), time_text, font=font_small, fill=(255, 255, 255))
+        draw.text((0, disp.height - 16), time_text, font=font_small, fill=(255, 255, 255))
 
         
 
@@ -1194,7 +1114,7 @@ def draw_now_playing():
 
         state_width = state_bbox[2] - state_bbox[0]
 
-        draw.text((disp.width - state_width - 10, disp.height - 32), 
+        draw.text((disp.width - state_width - 0, disp.height - 16), 
 
                  state_text, font=font_small, fill=(255, 255, 255))
 
@@ -1202,15 +1122,13 @@ def draw_now_playing():
 
         # トラック情報
 
-        info = f"{status['album']} - {status['title']} - {status['artist']}"
+        info = f"{status['title']}"
 
         info_bbox = draw.textbbox((0, 0), info[:40], font=font_small)
 
         info_width = info_bbox[2] - info_bbox[0]
 
-        draw.text(((disp.width - info_width) // 2, disp.height - 16), 
-
-                 info[:40], font=font_small, fill=(255, 255, 255))
+        draw.text((8 , disp.height - 32), info[:40], font=font_small, fill=(255, 255, 255))
 
 
 
@@ -1376,7 +1294,7 @@ if __name__ == "__main__":
 
         dc=9,
 
-        backlight=0,
+        backlight=13,
 
         spi_speed_hz=30 * 1000 * 1000,
 
@@ -1414,7 +1332,7 @@ if __name__ == "__main__":
 
     # バックライトを点灯
 
-    set_backlight(True)
+    #set_backlight(True)
 
     
 
