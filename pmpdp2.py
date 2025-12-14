@@ -80,6 +80,8 @@ moving_queue_item = False
 
 moving_item_index = -1
 
+title_scroll_offset = 0  # タイトルスクロール用オフセット
+
 
 
 # ディスプレイ設定
@@ -547,6 +549,8 @@ def handle_button_action(bt):
     global last_button_time, button_click_count
 
     global moving_queue_item, moving_item_index, queue_items, screen_off
+    
+    global title_scroll_offset
 
     
 
@@ -573,10 +577,12 @@ def handle_button_action(bt):
             if status['state'] == 'play':
 
                 mpd_client.pause()
+                title_scroll_offset = 0  # 停止時にスクロールをリセット
 
             else:
 
                 mpd_client.play()
+                title_scroll_offset = 0  # 再生開始時にスクロールをリセット
 
         except Exception as e:
 
@@ -643,6 +649,7 @@ def handle_button_action(bt):
         elif selected_index == 1:  # 再生中
 
             current_screen = "now_playing"
+            title_scroll_offset = 0  # スクロールオフセットをリセット
 
         elif selected_index == 2:  # 再生キュー
 
@@ -834,13 +841,15 @@ def handle_button_up(bt):
 
         action_menu_index = max(0, action_menu_index - 1)
 
+        update_display()
     else:
 
         selected_index = max(0, selected_index - 1)
 
+        update_display()
     
 
-    update_display()
+    #update_display()
 
 
 
@@ -882,6 +891,7 @@ def handle_button_down(bt):
 
         action_menu_index = min(len(action_menu_items) - 1, action_menu_index + 1)
 
+        update_display()
     else:
 
         max_index = 0
@@ -902,9 +912,10 @@ def handle_button_down(bt):
 
         selected_index = min(max_index, selected_index + 1)
 
+        update_display()
     
 
-    update_display()
+   # update_display()
 
 
 
@@ -922,7 +933,7 @@ def format_time(seconds):
 
 def get_album_art(file_path):
 
-    """アルバムアートを取得（MPDの埋め込みアートワークを使用）"""
+    """アルバムアートを取得(MPDの埋め込みアートワークを使用)"""
 
     try:
 
@@ -1076,7 +1087,7 @@ def draw_now_playing():
 
     if status:
 
-        # アルバムアート（背景）
+        # アルバムアート(背景)
 
         art = get_album_art(status['file'])
 
@@ -1086,11 +1097,26 @@ def draw_now_playing():
 
             img.paste(art, (0, 0))
 
-            # 半透明オーバーレイ
 
-            overlay = Image.new('RGBA', (disp.width, disp.height), (0, 0, 0, 32))
 
-            img.paste(overlay, (0, 0), overlay)
+
+def draw_now_playing_info():
+
+    """再生中画面の情報部分を描画(独立して更新)"""
+
+    global title_scroll_offset
+
+    
+
+    status = get_current_status()
+
+    
+
+    if status:
+
+        # (0, 208)から(240, 240)までの黒背景を描画
+
+        draw.rectangle((0, 208, disp.width, disp.height), fill=(0, 0, 0))
 
         
 
@@ -1102,7 +1128,7 @@ def draw_now_playing():
 
         time_text = f"{elapsed_str} / {duration_str}"
 
-        draw.text((0, disp.height - 16), time_text, font=font_small, fill=(255, 255, 255))
+        draw.text((2, 208), time_text, font=font_small, fill=(255, 255, 255))
 
         
 
@@ -1114,21 +1140,37 @@ def draw_now_playing():
 
         state_width = state_bbox[2] - state_bbox[0]
 
-        draw.text((disp.width - state_width - 0, disp.height - 16), 
+        draw.text((disp.width - state_width - 2, 208), 
 
                  state_text, font=font_small, fill=(255, 255, 255))
 
         
 
-        # トラック情報
+        # タイトル情報(スクロール対応)
 
-        info = f"{status['title']}"
+        title = status['title'] if status['title'] else "No Title"
 
-        info_bbox = draw.textbbox((0, 0), info[:40], font=font_small)
+        
 
-        info_width = info_bbox[2] - info_bbox[0]
+        # タイトルが14文字を超える場合はスクロール
 
-        draw.text((8 , disp.height - 32), info[:40], font=font_small, fill=(255, 255, 255))
+        if len(title) > 14:
+
+            # スクロール用の拡張テキスト(ループ用に2回繰り返し + スペース)
+
+            scroll_text = title + " " + title + " " + title + " " + title
+
+            # オフセットを計算(1文字ずつ)
+
+            display_text = scroll_text[title_scroll_offset:title_scroll_offset + 28 ]
+
+        else:
+
+            display_text = title
+
+        
+
+        draw.text((2, 224), display_text, font=font_small, fill=(255, 255, 255))
 
 
 
@@ -1268,6 +1310,37 @@ def keep_alive_loop():
                 print(f"Main client reconnection failed: {re_e}.")
         time.sleep(interval)
 
+
+def now_playing_update_loop():
+    """再生中画面の情報部分を毎秒更新"""
+    global title_scroll_offset
+    
+    while True:
+        if current_screen == "now_playing" and not screen_off:
+            status = get_current_status()
+            if status:
+                title = status['title'] if status['title'] else "No Title"
+                
+                # 再生中の場合のみタイトルスクロール
+                if status['state'] == 'play' and len(title) > 14:
+                    title_scroll_offset += 1
+                    # ループ処理(タイトル長 + スペース2文字分でリセット)
+                    if title_scroll_offset >= len(title) + 2:
+                        title_scroll_offset = 0
+                else:
+                    # 停止中またはタイトルが短い場合はリセット
+                    title_scroll_offset = 0
+                
+                # 情報部分のみ再描画
+                draw_now_playing_info()
+                disp.display(img)
+        else:
+            # 再生中画面以外ではスクロールをリセット
+            title_scroll_offset = 0
+        
+        time.sleep(1)
+
+
 # メイン処理
 
 if __name__ == "__main__":
@@ -1286,7 +1359,7 @@ if __name__ == "__main__":
 
         height=240,
 
-        rotation=90,
+        rotation=0,
 
         port=0,
 
@@ -1296,7 +1369,7 @@ if __name__ == "__main__":
 
         backlight=13,
 
-        spi_speed_hz=30 * 1000 * 1000,
+        spi_speed_hz=60 * 1000 * 1000,
 
         offset_left=0,
 
@@ -1345,18 +1418,54 @@ if __name__ == "__main__":
     keep_alive_thread.daemon = True
     keep_alive_thread.start()
     
+    # 再生中画面の情報更新スレッド
+    now_playing_thread = threading.Thread(target=now_playing_update_loop)
+    now_playing_thread.daemon = True
+    now_playing_thread.start()
+    
 
-    # メインループ
-
+    # メインループ - 曲変更を検知して画面を更新
     try:
+
+        current_song_id = None
 
         while True:
 
+            # now_playing画面のときのみ曲変更を監視
+
             if current_screen == "now_playing":
 
-                update_display()
+                try:
 
-            time.sleep(5)
+                    status = mpd_client.status()
+
+                    song_id = status.get('songid', None)
+
+                    
+
+                    # 曲が変更された場合に画面を更新
+
+                    if song_id != current_song_id:
+
+                        current_song_id = song_id
+
+                        update_display()
+
+                except Exception as e:
+
+                    print(f"Error in main loop: {e}")
+
+                
+
+                time.sleep(1)  # 0.5秒ごとに曲変更をチェック
+
+            else:
+
+                # now_playing画面以外では負荷軽減のため長めの待機
+
+                current_song_id = None  # 画面復帰時に確実に更新するためリセット
+
+                time.sleep(5)
 
     except KeyboardInterrupt:
 
